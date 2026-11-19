@@ -4,8 +4,9 @@
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test"
+    "dev": "cross-env NODE_ENV=development OPEN_SEATS=1 OWNER_PIN=1234 SECRET=any-long-random-text RAZORPAY_KEY_ID=rzp_test_U26wpuKMxl1JIr RAZORPAY_KEY_SECRET=A9DpaZ6D7Tyn6beD3VmXc4pi node server.js",
+"start": "cross-env NODE_ENV=production node server.js",
+    "prod": "cross-env NODE_ENV=production node server.js"
   },
   "engines": {
     "node": ">=22.5"
@@ -13,5 +14,9 @@
   "dependencies": {
     "compression": "^1.8.2",
     "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
   }
 }
+

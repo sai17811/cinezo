@@ -7,6 +7,19 @@ const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
 
+// ---------- logging ----------
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+const LEVEL = LOG_LEVELS[(process.env.LOG_LEVEL || "info").toLowerCase()] || LOG_LEVELS.info;
+const fmt = (ts) => new Date(ts).toISOString().replace("T", " ").slice(0, 19);
+const log = (level, msg, extra) => {
+  if (LOG_LEVELS[level] < LEVEL) return;
+  const line = `[${fmt(Date.now())}] ${level.toUpperCase().padEnd(5)} ${msg}`;
+  if (level === "error" || level === "warn") console.error(line);
+  else console.log(line);
+  if (extra) console.log(JSON.stringify(extra, null, 0));
+};
+const logReq = (req, status, ms) => log("debug", `${req.ip} ${req.method} ${req.path} ? ${status} (${ms}ms)`);
+
 // ---------- config ----------
 const PROD = process.env.NODE_ENV === "production";
 const PIN = process.env.OWNER_PIN || "1234";
@@ -23,9 +36,9 @@ const SESSION_MS = 12 * 36e5;
 const HOUR = 36e5, DAY = 864e5;
 const PUBLIC = path.join(__dirname, "public");
 
-if (PROD && !(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET)) console.warn("WARNING: payments are in DEMO mode (no real money). Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to go live.");
+if (PROD && !(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET)) log("warn", "WARNING: payments are in DEMO mode (no real money). Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to go live.");
 if (PROD && (!process.env.OWNER_PIN || !process.env.SECRET || PIN === "1234")) {
-  console.error("Set a real OWNER_PIN (not 1234) and a long random SECRET before running in production.");
+  log("error", "Set a real OWNER_PIN (not 1234) and a long random SECRET before running in production.");
   process.exit(1);
 }
 
@@ -84,7 +97,7 @@ const saveOrder = (o) => q.save.run(o.id, o.t, JSON.stringify(o));
 
 // ---------- time + stats ----------
 const dayStart = (t) => Math.floor((t + TZ_OFFSET) / DAY) * DAY - TZ_OFFSET;
-const fmt = (t, o) => new Date(t + TZ_OFFSET).toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+const fmtDate = (t, o) => new Date(t + TZ_OFFSET).toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
 
 function buildStats(range) {
   const now = Date.now(), today = dayStart(now);
@@ -96,7 +109,7 @@ function buildStats(range) {
   const buckets = Array.from({ length: count }, (_, i) => {
     const t = since + i * size;
     const h = i % 12 || 12;
-    return { label: hourly ? h + (i < 12 ? "a" : "p") : fmt(t, { weekday: "short", day: "numeric" }), orders: 0, revenue: 0 };
+    return { label: hourly ? h + (i < 12 ? "a" : "p") : fmtDate(t, { weekday: "short", day: "numeric" }), orders: 0, revenue: 0 };
   });
   const items = new Map();
   let orders = 0, revenue = 0, cancelled = 0;
@@ -143,13 +156,22 @@ async function confirmPayment(id) {
     const r = q.getByRazorpay.get(id);
     if (r) o = JSON.parse(r.json);
   }
-  if (!o || o.status !== "PENDING_PAYMENT") return o;
-  const s = await rz("GET", "/orders/" + encodeURIComponent(o.razorpayOrderId || id));
-  if (s.receipt !== o.id) return { ...o, unpaid: true };
-  if (s.status !== "paid" || Number(s.amount) !== o.total * 100) return { ...o, unpaid: true };
-  o.status = "RECEIVED"; o.paid = "Razorpay";
-  saveOrder(o); pushOrder(o);
-  return o;
+  if (!o) { log("warn", "confirmPayment: order not found", { id }); return null; }
+  if (o.status !== "PENDING_PAYMENT") { log("info", "confirmPayment: order not pending, skipping", { id, status: o.status }); return o; }
+  log("info", "confirmPayment: querying Razorpay", { id, razorpayOrderId: o.razorpayOrderId });
+  try {
+    const s = await rz("GET", "/orders/" + encodeURIComponent(o.razorpayOrderId || id));
+    log("info", "confirmPayment: Razorpay response", { id, razorpayStatus: s.status, amount: s.amount, expected: o.total * 100 });
+    if (s.receipt !== o.id) { log("warn", "confirmPayment: receipt mismatch", { id, expected: o.id, got: s.receipt }); return { ...o, unpaid: true }; }
+    if (s.status !== "paid" || Number(s.amount) !== o.total * 100) { log("warn", "confirmPayment: Razorpay reports unpaid or wrong amount", { id, status: s.status, amount: s.amount, expected: o.total * 100 }); return { ...o, unpaid: true }; }
+    o.status = "RECEIVED"; o.paid = "Razorpay";
+    saveOrder(o); pushOrder(o);
+    log("info", "confirmPayment: payment confirmed", { id, status: o.status, total: o.total });
+    return o;
+  } catch (e) {
+    log("error", "confirmPayment: Razorpay API error", { id, error: e.message });
+    throw e;
+  }
 }
 
 // ---------- rate limiting ----------
@@ -170,12 +192,21 @@ app.set("trust proxy", 1);
 app.use(express.json({ limit: "20kb", verify: (req, res, buf) => { req.rawBody = buf.toString("utf8"); } }));
 app.use(compression());
 app.use((req, res, next) => {
+  const start = Date.now();
+  const origEnd = res.end;
+  res.end = function (...args) {
+    logReq(req, res.statusCode, Date.now() - start);
+    return origEnd.apply(this, args);
+  };
+  next();
+});
+app.use((req, res, next) => {
   res.set({
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://api.razorpay.com; frame-src https://checkout.razorpay.com; base-uri 'self'; form-action 'self';",
+    "Content-Security-Policy": "default-src 'self' https://cinezo.in; script-src 'self' https://checkout.razorpay.com https://api.razorpay.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://cinezo.in https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://checkout.razorpay.com https://api.razorpay.com; base-uri 'self'; form-action 'self';",
   });
   if (PROD) res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   next();
@@ -207,7 +238,8 @@ app.get("/api/orders", owner, (req, res) => res.json(parse(q.live.all(dayStart(D
 app.get("/api/stats", owner, (req, res) => res.json(buildStats(String(req.query.range))));
 app.get("/api/orders/:id", (req, res) => {
   const o = getOrder(req.params.id);
-  o ? res.json(o) : res.status(404).json({ error: "Not found" });
+  if (o) { log("debug", "Order fetch", { id: req.params.id, status: o.status, paid: o.paid }); res.json(o); }
+  else { log("warn", "Order fetch: not found", { id: req.params.id }); res.status(404).json({ error: "Not found" }); }
 });
 
 // Validates seat signature + cart, prices everything server-side, returns an unsaved order.
@@ -278,7 +310,7 @@ app.post("/api/pay", async (req, res) => {
       saveOrder(order);
       body = { id: order.id, sessionId: ro.id, keyId: RP.id, amount: order.total * 100, mode: "live" };
     } catch (e) {
-      console.error("Razorpay create order failed:", e.message);
+      log("error", "Razorpay create order failed", { ip: req.ip, error: e.message });
       status = 502; body = { error: "Payment service is unavailable. Please try again." };
     }
   }
@@ -291,18 +323,37 @@ app.post("/api/pay/verify", async (req, res) => {
   if (!RP_ON) return res.status(404).json({ error: "Not found" });
   try {
     const { id, razorpay_payment_id, razorpay_signature } = req.body || {};
+    log("info", "Verify request", { id, payment_id: razorpay_payment_id });
     const o = getOrder(String(id));
-    if (!o) return res.status(404).json({ error: "Not found" });
+    if (!o) { log("warn", "Verify: order not found", { id }); return res.status(404).json({ error: "Not found" }); }
     // Razorpay signature = HMAC_SHA256(order_id|payment_id, key_secret) as hex — proves Razorpay issued this payment.
     const sig = crypto.createHmac("sha256", RP.secret).update(`${o.razorpayOrderId || o.id}|${razorpay_payment_id}`).digest("hex");
-    if (!safeEqual(sig, razorpay_signature || "")) return res.status(400).json({ error: "Invalid payment signature." });
+    if (!safeEqual(sig, razorpay_signature || "")) { log("warn", "Verify: invalid signature", { id }); return res.status(400).json({ error: "Invalid payment signature." }); }
+    log("info", "Verify: signature OK, confirming with Razorpay", { id });
     const done = await confirmPayment(String(id)); // server-to-server Razorpay check: paid + full amount
-    if (!done) return res.status(404).json({ error: "Not found" });
-    if (done.unpaid) return res.status(402).json({ error: "Payment not completed." });
+    if (!done) { log("warn", "Verify: Razorpay confirmation returned null", { id }); return res.status(404).json({ error: "Not found" }); }
+    if (done.unpaid) { log("warn", "Verify: Razorpay reports unpaid", { id, status: done.status }); return res.status(402).json({ error: "Payment not completed." }); }
     done.paymentId = razorpay_payment_id;
     saveOrder(done); pushOrder(done);
+    log("info", "Verify: payment confirmed, order live", { id, status: done.status, total: done.total });
     res.json(done);
-  } catch (e) { res.status(502).json({ error: "Could not confirm payment. If money was deducted, the order will appear shortly." }); }
+  } catch (e) { log("error", "Verify: exception", { error: e.message, stack: e.stack }); res.status(502).json({ error: "Could not confirm payment. If money was deducted, the order will appear shortly." }); }
+});
+
+// Client-side fallback: confirm payment by order ID when Razorpay checkout v2
+// closes without calling the handler callback. Safe because confirmPayment()
+// queries Razorpay server-to-server and only confirms if Razorpay says paid.
+app.post("/api/orders/:id/confirm", async (req, res) => {
+  if (!RP_ON) return res.status(404).json({ error: "Not found" });
+  const id = String(req.params.id);
+  log("info", "Order confirm request", { id });
+  try {
+    const done = await confirmPayment(id);
+    if (!done) { log("warn", "Order confirm: not found", { id }); return res.status(404).json({ error: "Not found" }); }
+    if (done.unpaid) { log("warn", "Order confirm: Razorpay reports unpaid", { id, status: done.status }); return res.status(402).json({ error: "Payment not completed." }); }
+    log("info", "Order confirm: payment confirmed", { id, status: done.status, total: done.total });
+    res.json(done);
+  } catch (e) { log("error", "Order confirm: exception", { id, error: e.message }); res.status(502).json({ error: "Could not confirm payment." }); }
 });
 
 // Razorpay server-to-server callback (covers closed tabs and flaky networks). Signature = HMAC-SHA256(payload, webhook_secret).
@@ -385,6 +436,12 @@ app.get(["/", "/index.html"], (req, res) => {
 app.use(express.static(PUBLIC, { maxAge: "1d", index: false }));
 app.use("/api", (req, res) => res.status(404).json({ error: "Not found" }));
 
+// ---------- error handler ----------
+app.use((err, req, res, next) => {
+  log("error", "Unhandled request error", { ip: req.ip, path: req.path, error: err.message, stack: err.stack });
+  res.status(500).json({ error: "Internal server error" });
+});
+
 // ---------- housekeeping ----------
 function backup() {
   if (DB_FILE === ":memory:") return;
@@ -400,11 +457,13 @@ const housekeeping = () => { q.dropStale.run(Date.now() - HOUR); }; // abandoned
 // ---------- start ----------
 if (require.main === module) {
   const port = process.env.PORT || 3000;
-  try { backup(); } catch (e) { console.error("Backup failed:", e.message); }
-  setInterval(() => { try { backup(); } catch (e) { console.error("Backup failed:", e.message); } }, DAY).unref();
+  try { backup(); } catch (e) { log("error", "Backup failed", { error: e.message }); }
+  setInterval(() => { try { backup(); } catch (e) { log("error", "Backup failed", { error: e.message }); } }, DAY).unref();
   setInterval(housekeeping, HOUR).unref();
   const server = app.listen(port, () => console.log("SeatServe running on port " + port));
   const stop = () => { server.close(() => { db.close(); process.exit(0); }); setTimeout(() => process.exit(0), 3000).unref(); };
   process.on("SIGTERM", stop); process.on("SIGINT", stop);
 }
 module.exports = { app, seatSig };
+
+
