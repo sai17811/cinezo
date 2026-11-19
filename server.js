@@ -421,7 +421,7 @@ app.post("/api/sold", owner, (req, res) => {
 });
 
 app.get("/api/events", (req, res) => {
-  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive", "X-Accel-Buffering": "no" });
   res.flushHeaders();
   const c = { res, owner: validToken(req.query.token), order: String(req.query.order || "") };
   clients.add(c);
@@ -435,7 +435,7 @@ const INDEX = fs.readFileSync(path.join(PUBLIC, "index.html"));
 const INDEX_GZ = zlib.gzipSync(INDEX, { level: 9 });
 const INDEX_ETAG = `"${crypto.createHash("sha1").update(INDEX).digest("hex").slice(0, 16)}"`;
 app.get(["/", "/index.html"], (req, res) => {
-  res.set({ ETag: INDEX_ETAG, "Cache-Control": "no-cache", "Content-Type": "text/html; charset=utf-8", Vary: "Accept-Encoding" });
+  res.set({ ETag: INDEX_ETAG, "Cache-Control": "no-store", "Content-Type": "text/html; charset=utf-8", Vary: "Accept-Encoding" });
   if (req.get("if-none-match") === INDEX_ETAG) return res.status(304).end();
   if (/\bgzip\b/.test(req.get("accept-encoding") || "")) { res.set("Content-Encoding", "gzip"); return res.end(INDEX_GZ); }
   res.end(INDEX);
