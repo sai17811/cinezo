@@ -1,0 +1,10 @@
+﻿const fs = require('fs');
+let content = fs.readFileSync('server.js', 'utf8');
+
+const oldWebhook = '// Razorpay server-to-server callback (covers closed tabs and flaky networks). Signature = HMAC-SHA256(payload, webhook_secret).\napp.post(" /api/razorpay/webhook\, async (req, res) => {\n if (!RP_ON) return res.sendStatus(404);\n const secret = process.env.RAZORPAY_WEBHOOK_SECRET || \\;\n const expected = crypto.createHmac(\sha256\, secret).update(req.rawBody || \\).digest(\hex\);\n if (!secret || !safeEqual(req.get(\x-razorpay-signature\) || \\, expected)) return res.sendStatus(401);\n const { event, payload } = req.body || {};\n if (event === \payment.captured\ && payload?.payment?.entity) {\n const id = payload.payment.entity.order_id;\n try { await confirmPayment(id); } catch (e) { return res.sendStatus(500); }\n }\n res.sendStatus(200);\n});';
+
+const newWebhook = '// Razorpay server-to-server callback (covers closed tabs and flaky networks). Signature = HMAC-SHA256(payload, webhook_secret).\napp.post(\/api/razorpay/webhook\, async (req, res) => {\n if (!RP_ON) return res.sendStatus(404);\n const secret = process.env.RAZORPAY_WEBHOOK_SECRET || \\;\n const expected = crypto.createHmac(\sha256\, secret).update(req.rawBody || \\).digest(\hex\);\n if (!secret || !safeEqual(req.get(\x-razorpay-signature\) || \\, expected)) return res.sendStatus(401);\n const { event, payload } = req.body || {};\n if (event === \payment.captured\ && payload?.payment?.entity) {\n const id = payload.payment.entity.order_id;\n try { await confirmPayment(id); } catch (e) { return res.sendStatus(500); }\n } else if (event === \payment.failed\ && payload?.payment?.entity) {\n const id = payload.payment.entity.order_id;\n // resolve by razorpay order id, mark cancelled\n const r = q.getByRazorpay.get(id);\n if (r) {\n const o = JSON.parse(r.json);\n if (o.status === \PENDING_PAYMENT\) {\n o.status = \CANCELLED\;\n saveOrder(o); pushOrder(o);\n }\n }\n }\n res.sendStatus(200);\n});';
+
+content = content.replace(oldWebhook, newWebhook);
+fs.writeFileSync('server.js', content);
+console.log('Step 4 done');
