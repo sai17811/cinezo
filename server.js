@@ -206,8 +206,15 @@ app.use((req, res, next) => {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
-    "Content-Security-Policy": "default-src 'self' https://cinezo.in; script-src 'self' https://checkout.razorpay.com https://api.razorpay.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://cinezo.in https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://checkout.razorpay.com https://api.razorpay.com; base-uri 'self'; form-action 'self';",
   });
+  // Only set CSP on HTML and API responses — static files inherit CSP from the
+  // HTML page that loads them and would otherwise cache an outdated CSP header.
+  const isStatic = /\.(js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?|woff|ttf|eot)(\?.*)?$/.test(req.path);
+  if (!isStatic) {
+    res.set({
+      "Content-Security-Policy": "default-src 'self' https://cinezo.in; script-src 'self' https://checkout.razorpay.com https://api.razorpay.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self' https://cinezo.in https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://checkout.razorpay.com https://api.razorpay.com; base-uri 'self'; form-action 'self';",
+    });
+  }
   if (PROD) res.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   next();
 });
