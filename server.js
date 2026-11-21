@@ -43,7 +43,7 @@ if (PROD && (!process.env.OWNER_PIN || !process.env.SECRET || PIN === "1234")) {
 }
 
 const MENU = [
-  ["Salted Popcorn", 150], ["Caramel Popcorn", 180], ["Cheese Popcorn", 190], ["Coke", 90],
+  ["Salted Popcorn", 1], ["Caramel Popcorn", 180], ["Cheese Popcorn", 190], ["Coke", 90],
   ["Pepsi", 90], ["Cold Coffee", 120], ["Water Bottle", 40], ["Veg Burger", 140],
   ["Samosa (2 pcs)", 60], ["French Fries", 110], ["Nachos with Cheese", 160],
   ["Large Popcorn + 2 Cokes", 380], ["Ice Cream Cup", 80],
@@ -207,7 +207,7 @@ app.use((req, res, next) => {
     "Referrer-Policy": "same-origin",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=()",
   });
-  // Only set CSP on HTML and API responses � static files inherit CSP from the
+  // Only set CSP on HTML and API responses  static files inherit CSP from the
   // HTML page that loads them and would otherwise cache an outdated CSP header.
   const isStatic = /\.(js|css|png|jpg|jpeg|gif|svg|ico|webp|woff2?|woff|ttf|eot)(\?.*)?$/.test(req.path);
   if (!isStatic) {
@@ -273,7 +273,7 @@ function prepareOrder(b) {
   return {
     order: {
       id: "SS" + crypto.randomBytes(3).toString("hex").toUpperCase(),
-      seat: `Screen ${s.scr} · Row ${row} · Seat ${s.no}`,
+      seat: `Screen ${s.scr} Â· Row ${row} Â· Seat ${s.no}`,
       screen: String(s.scr), row,
       name: String(b.name || "Guest").slice(0, 40), note: String(b.note || "").slice(0, 120),
       items, total: Math.round(sub * TAX), status: "RECEIVED", t: Date.now(),
@@ -333,7 +333,7 @@ app.post("/api/pay/verify", async (req, res) => {
     log("info", "Verify request", { id, payment_id: razorpay_payment_id });
     const o = getOrder(String(id));
     if (!o) { log("warn", "Verify: order not found", { id }); return res.status(404).json({ error: "Not found" }); }
-    // Razorpay signature = HMAC_SHA256(order_id|payment_id, key_secret) as hex — proves Razorpay issued this payment.
+    // Razorpay signature = HMAC_SHA256(order_id|payment_id, key_secret) as hex â proves Razorpay issued this payment.
     const sig = crypto.createHmac("sha256", RP.secret).update(`${o.razorpayOrderId || o.id}|${razorpay_payment_id}`).digest("hex");
     if (!safeEqual(sig, razorpay_signature || "")) { log("warn", "Verify: invalid signature", { id }); return res.status(400).json({ error: "Invalid payment signature." }); }
     log("info", "Verify: signature OK, confirming with Razorpay", { id });
