@@ -1,4 +1,4 @@
-﻿const CACHE = "cinezo-v1";
+﻿const CACHE = "cinezo-v2";
 const SHELL = [
   "/", "/index.html", "/style.css", "/app.js",
   "/images/cinezo-favicon.svg", "/images/cinezo-icon.svg",
@@ -38,3 +38,5 @@ self.addEventListener("fetch", (e) => {
   }
   e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request)));
 });
+
+
