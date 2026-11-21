@@ -30,7 +30,7 @@ const RP = {
   id: process.env.RAZORPAY_KEY_ID, secret: process.env.RAZORPAY_KEY_SECRET,
 };
 const RP_ON = !!(RP.id && RP.secret);
-const RP_BASE = "https://api.razorpay.com/v1";
+const RP_BASE = "https://api.razorpay.com/v2";
 const TZ_OFFSET = (+process.env.TZ_OFFSET_MIN || 330) * 60000; // default IST
 const SESSION_MS = 12 * 36e5;
 const HOUR = 36e5, DAY = 864e5;
