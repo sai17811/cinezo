@@ -440,7 +440,7 @@ app.get(["/", "/index.html"], (req, res) => {
   if (/\bgzip\b/.test(req.get("accept-encoding") || "")) { res.set("Content-Encoding", "gzip"); return res.end(INDEX_GZ); }
   res.end(INDEX);
 });
-app.use(express.static(PUBLIC, { maxAge: "1d", index: false }));
+app.use(express.static(PUBLIC, { maxAge: 0, index: false }));
 app.use("/api", (req, res) => res.status(404).json({ error: "Not found" }));
 
 // ---------- error handler ----------
