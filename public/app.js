@@ -5,7 +5,7 @@ if ('serviceWorker' in navigator) {
 /* ================= DATA ================= */
 const G={Popcorn:["#ffd36b","#d6781b"],Beverages:["#7ec8ff","#2a5fc4"],Snacks:["#ffb36b","#c4481b"],Combos:["#ff9aa8","#b0213f"],Dessert:["#ffc3e0","#b6458a"]};
 const MENU=[
-["Popcorn","Salted Popcorn",150,"salted-popcorn","Freshly popped \u00B7 classic butter & salt",1],
+["Popcorn","Salted Popcorn",1,"salted-popcorn","Freshly popped \u00B7 classic butter & salt",1],
 ["Popcorn","Caramel Popcorn",180,"caramel-popcorn","Crackly caramel glaze, sweet & crunchy",1],
 ["Popcorn","Cheese Popcorn",190,"cheese-popcorn","Bold cheddar dust on hot popcorn",0],
 ["Beverages","Coke",90,"coke","Ice-cold classic \u00B7 300 ml",0],
